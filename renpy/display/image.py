@@ -25,9 +25,11 @@
 
 import renpy.display
 import renpy.text
+import renpy.config
 from renpy.display.render import render, Render
 
 import collections
+from itertools import combinations
 
 # A map from image name to the displayable object corresponding to that
 # image.
@@ -201,6 +203,10 @@ def image_exists(name, exact=False):
         if name in images:
             return True
 
+        if renpy.config.proc_image_exists_callback:
+            if renpy.config.proc_image_exists_callback(name[0], frozenset(name[1:])):
+                return True
+
         if exact:
             return False
 
@@ -295,6 +301,12 @@ class ImageReference(renpy.display.core.Displayable):
 
             if target is not None:
                 break
+
+            if renpy.config.proc_image_generate_callback:
+                target = renpy.config.proc_image_generate_callback(name)
+                if target is not None:
+                    register_image(name, target)
+                    break
 
             args.insert(0, name[-1])
             name = name[:-1]
@@ -782,53 +794,37 @@ class ShownImageInfo(renpy.object.Object):
             if attrs is not None:
                 return (tag,) + attrs
 
-        # The longest length of an image that matches.
-        max_len = -1
+        # Create some structures for testing matches
+        required = frozenset(required)
+        attributes_set_map = {frozenset(attrs).difference(required): attrs for attrs in image_attributes[tag] if required.issubset(attrs)}
 
-        # The list of matching images.
-        matches = None
+        for r in xrange(len(optional), 0, -1):
+            # The list of matching images.
+            matches = []
 
-        for attrs in image_attributes[tag]:
+            # Test to see which combinations match
+            for optional_combo in combinations(optional, r):
+                optional_combo = frozenset(optional_combo)
+                if optional_combo in attributes_set_map:
+                    matches.append((tag,) + attributes_set_map[optional_combo])
+                elif renpy.config.proc_image_exists_callback:
+                    attrs = renpy.config.proc_image_exists_callback(tag, required | optional_combo)
+                    if attrs:
+                        matches.append((tag,) + attrs)
 
-            num_required = 0
+            if len(matches) == 1:
+                return matches[0]
 
-            for i in attrs:
-                if i in required:
-                    num_required += 1
-                    continue
+            if len(matches) > 0:
+                if exception_name:
+                    raise Exception("Showing '" + " ".join(exception_name) + "' is ambiguous, possible images include: " + ", ".join(" ".join(i) for i in matches))
+                else:
+                    return None
 
-                elif i not in optional:
-                    break
+        if required in attributes_set_map:
+            return attributes_set_map[required]
 
-            else:
-
-                # We don't have any not-found attributes. But we might not
-                # have all of the attributes.
-
-                if num_required != len(required):
-                    continue
-
-                len_attrs = len(set(attrs))
-
-                if len_attrs < max_len:
-                    continue
-
-                if len_attrs > max_len:
-                    max_len = len_attrs
-                    matches = [ ]
-
-                matches.append((tag, ) + attrs)
-
-        if matches is None:
-            return None
-
-        if len(matches) == 1:
-            return matches[0]
-
-        if exception_name:
-            raise Exception("Showing '" + " ".join(exception_name) + "' is ambiguous, possible images include: " + ", ".join(" ".join(i) for i in matches))
-        else:
-            return None
+        return None
 
 
 renpy.display.core.ImagePredictInfo = ShownImageInfo

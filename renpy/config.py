@@ -811,6 +811,10 @@ atl_multiple_events = True
 # A callback that's called when checking to see if a file is loadable.
 loadable_callback = None
 
+# A pair of callbacks used for procedural image definitions
+proc_image_exists_callback = None
+proc_image_generate_callback = None
+
 del os
 del collections
 
